@@ -444,15 +444,59 @@ pub fn get_filter_types() -> Vec<InputObject> {
     ]
 }
 
+#[allow(dead_code)]
+#[derive(Debug)]
+struct DebugValue {
+    is_null: bool,
+    boolean: async_graphql::Result<bool>,
+    enum_name: async_graphql::Result<String>,
+    r#i64: async_graphql::Result<i64>,
+    r#u64: async_graphql::Result<u64>,
+    r#f32: async_graphql::Result<f32>,
+    r#f64: async_graphql::Result<f64>,
+    string: async_graphql::Result<String>,
+    object: std::collections::HashMap<String, DebugValue>,
+    list: Vec<DebugValue>,
+}
+
+impl DebugValue {
+    pub fn decode(data: &async_graphql::dynamic::ValueAccessor<'_>) -> Self {
+        Self {
+            is_null: data.is_null(),
+            boolean: data.boolean(),
+            enum_name: data.enum_name().map(|s| s.to_string()),
+            r#i64: data.i64(),
+            r#u64: data.u64(),
+            r#f32: data.f32(),
+            r#f64: data.f64(),
+            string: data.string().map(|s| s.to_string()),
+            object: data
+                .object()
+                .map(|object| {
+                    object
+                        .iter()
+                        .map(|(key, value)| (key.to_string(), Self::decode(&value)))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            list: data
+                .list()
+                .map(|list| list.iter().map(|value| Self::decode(&value)).collect())
+                .unwrap_or_default(),
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! basic_filtering_operation {
     ( $condition:expr, $column:expr, $filter:expr, $operator:ident, $type:ident ) => {
         if let Some(data) = $filter.get(stringify!($operator)) {
             let data = data.$type().expect(
                 format!(
-                    "We expect the {} to be of type {}",
+                    "We expect the {} to be of type {}: {:#?}",
                     stringify!($operator),
-                    stringify!($type)
+                    stringify!($type),
+                    DebugValue::decode(&data)
                 )
                 .as_str(),
             );
